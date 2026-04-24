@@ -1,0 +1,21 @@
+universal_guidelines:
+  style:
+    - id: "style:indent-4"
+      description: "Use 4-space indentation."
+      severity: "medium"
+    - id: "style:max-line-120"
+      description: "Limit line length to 120 characters."
+      severity: "low"
+    - id: "naming:camelCase"
+      description: "Method names should use camelCase for readability."
+      severity: "medium"
+
+project_guidelines:
+  architecture:
+    - id: "arch:service-layer"
+      description: "All new business logic should reside under the 'service' package."
+      severity: "high"
+  logging:
+    - id: "logging:custom-logger"
+      description: "Always use CustomLogger for output instead of System.out."
+      severity: "high"
