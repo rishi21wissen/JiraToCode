@@ -1,0 +1,13 @@
+**Summary:** Implement Fund Transfer Endpoint
+
+**Description:**
+As an authenticated banking user, I need to be able to transfer funds between my accounts securely. The system must ensure that I cannot transfer more money than I currently have in my source account, and it should create a transaction record for auditing purposes.
+
+**Acceptance Criteria:**
+1. Create a `POST /api/v1/accounts/transfer` endpoint.
+2. The endpoint uses a JSON body with: `sourceAccountId` (Long), `destinationAccountId` (Long), and `amount` (BigDecimal).
+3. The system validates that `amount` must be strictly greater than $0.00.
+4. If the `sourceAccountId` does not belong to the currently authenticated user, return a `403 Forbidden` error.
+5. If the `sourceAccountId` has insufficient funds, throw an `InsufficientFundsException` which returns `400 Bad Request` with a clear message.
+6. The exact amount is deducted from the source account and added to the destination account. This MUST happen in a single `@Transactional` method to prevent race conditions.
+7. Return `200 OK` with a success message and the new balance of the source account.

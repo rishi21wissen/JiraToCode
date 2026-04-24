@@ -1,94 +1,76 @@
+// =========================================
+// JiraToCode AI — Backend Server (BMAD SOA)
+// =========================================
+
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
 const path = require('path');
-const yaml = require('js-yaml');
+const aiService = require('./services/aiService');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-// Serve static files from the current directory
+// Serve frontend static files
 app.use(express.static(path.join(__dirname)));
 
-const GUIDELINES_FILE = path.join(__dirname, 'guidelines.yaml');
-
-// Helper to read guidelines safely
-function readGuidelines() {
-    try {
-        if (!fs.existsSync(GUIDELINES_FILE)) {
-            // Default if it doesn't exist
-            return { universal_guidelines: {}, project_guidelines: {} };
-        }
-        const fileContents = fs.readFileSync(GUIDELINES_FILE, 'utf8');
-        const data = yaml.load(fileContents) || {};
-        return data;
-    } catch (e) {
-        console.error("Error reading guidelines.yaml", e);
-        return { universal_guidelines: {}, project_guidelines: {} };
-    }
+// ---------- Initialize AI on startup ----------
+try {
+    aiService.initModel(process.env.GEMINI_API_KEY);
+} catch (err) {
+    console.error('[server] WARNING:', err.message);
+    console.error('[server] The server will start, but AI features will fail. Set GEMINI_API_KEY in .env');
 }
 
-// Get guidelines
+// ---------- Guidelines API (keep backward compat) ----------
 app.get('/api/guidelines', (req, res) => {
-    res.json(readGuidelines());
+    res.json(aiService.loadGuidelines());
 });
 
-// Update guidelines with new rules
 app.post('/api/guidelines', (req, res) => {
     const newRules = req.body.newRules || [];
-    
     if (newRules.length === 0) {
-        return res.json({ success: true, message: 'No new rules to add.' });
+        return res.json({ success: true, message: 'No new rules to add.', addedCount: 0 });
     }
-
-    const currentData = readGuidelines();
-    
-    // Ensure structure exists
-    if (!currentData.universal_guidelines) currentData.universal_guidelines = {};
-    if (!currentData.project_guidelines) currentData.project_guidelines = {};
-
-    let addedCount = 0;
-
-    newRules.forEach(rule => {
-        if (!rule.id || !rule.description || !rule.type) return;
-
-        // Categorize into universal or project
-        const targetSection = rule.type.toLowerCase() === 'universal' 
-            ? 'universal_guidelines' 
-            : 'project_guidelines';
-        
-        // Use a generic category group like "general" if category is not provided
-        const category = rule.category || 'general';
-
-        if (!currentData[targetSection][category]) {
-            currentData[targetSection][category] = [];
-        }
-
-        // Check if rule ID already exists to prevent duplicates
-        const exists = currentData[targetSection][category].find(r => r.id === rule.id);
-        
-        if (!exists) {
-            currentData[targetSection][category].push({
-                id: rule.id,
-                description: rule.description,
-                severity: rule.severity || 'medium'
-            });
-            addedCount++;
-        }
-    });
-
-    if (addedCount > 0) {
-        // Write back to file
-        const newYaml = yaml.dump(currentData, { noRefs: true });
-        fs.writeFileSync(GUIDELINES_FILE, newYaml, 'utf8');
-    }
-
-    res.json({ success: true, addedCount, currentData });
+    const addedCount = aiService.appendRules(newRules);
+    res.json({ success: true, addedCount });
 });
 
+// ---------- Code Generation API ----------
+app.post('/api/generate-code', async (req, res) => {
+    try {
+        const { summary, description, criteria } = req.body;
+        if (!summary || !criteria) {
+            return res.status(400).json({ error: 'Summary and Acceptance Criteria are required.' });
+        }
+        const result = await aiService.generateCode({ summary, description, criteria });
+        res.json({ success: true, output: result });
+    } catch (err) {
+        console.error('[server] /api/generate-code error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ---------- PR Review Analysis API ----------
+app.post('/api/analyze-pr', async (req, res) => {
+    try {
+        const { comments } = req.body;
+        if (!comments || comments.trim().length === 0) {
+            return res.status(400).json({ error: 'Review comments are required.' });
+        }
+        const { responseText, addedCount } = await aiService.analyzePR(comments);
+        res.json({ success: true, output: responseText, addedCount });
+    } catch (err) {
+        console.error('[server] /api/analyze-pr error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ---------- Start ----------
 app.listen(PORT, () => {
-    console.log(`Backend server running at http://localhost:${PORT}`);
-    console.log(`Serving static files and APIs...`);
+    console.log(`\n  ✨ JiraToCode AI Backend running at http://localhost:${PORT}`);
+    console.log(`  📂 Serving static files and APIs...`);
+    console.log(`  🧠 AI Service: ${process.env.GEMINI_API_KEY ? 'READY' : 'NOT CONFIGURED (set GEMINI_API_KEY in .env)'}\n`);
 });

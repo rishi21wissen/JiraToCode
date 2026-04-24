@@ -1,104 +1,8 @@
 // =========================================
-// JiraToCode AI — Core Application Logic
+// JiraToCode AI — Frontend (BMAD Thin Client)
 // =========================================
-
-// ---------- Configuration ----------
-const CONFIG = {
-    defaultApiKey: 'AIzaSyDK05Du4IUj7mHIBg8CAV24BrcxfuGb6B8',
-    defaultModel: 'gemini-2.0-flash',
-    apiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
-};
-
-// ---------- System Prompt ----------
-const SYSTEM_PROMPT = `You are an expert AI software developer tasked with implementing a Jira issue. The issue has a Summary, a Description, and detailed Acceptance Criteria. Your job is to **plan and write Java backend code** that satisfies these requirements.
-
-Follow this structured process:
-
-## 🎯 1. Clarify Objectives
-- Restate what the ticket is asking (feature, bug fix, refactor).
-- Identify the key deliverables.
-- Note any ambiguities, missing info, or assumptions you are making.
-- Identify constraints (tech stack, backward compatibility, etc.).
-
-## 📋 2. Implementation Checklist
-Break down the work into numbered implementation steps. For example:
-- Locate or create relevant classes/packages
-- Define new endpoints or modify existing ones
-- Implement service logic
-- Add validation rules
-- Update data models if needed
-- Write unit/integration tests
-- Handle error cases and edge cases
-
-## 🏗️ 3. Implementation (Java Code)
-
-Write production-ready Java Spring Boot code. Follow these conventions:
-- Use **Spring Boot** with \`@RestController\`, \`@Service\`, \`@Repository\` layers
-- Use **Spring Data JPA** for data access
-- Use **constructor injection** (no \`@Autowired\` on fields)
-- Include proper **validation** (\`@Valid\`, \`@NotBlank\`, etc.)
-- Include proper **error handling** (custom exceptions, \`@ControllerAdvice\`)
-- Add JavaDoc comments and inline comments for key logic
-- Use **DTOs** for request/response objects
-- Follow Java naming conventions (camelCase methods, PascalCase classes)
-- Include package declarations
-
-Structure your code output clearly with separate sections for:
-- Entity/Model classes
-- Repository interfaces
-- Service classes
-- Controller classes
-- DTOs (Request/Response)
-- Exception classes (if needed)
-- Test classes
-
-## ✅ 4. Acceptance Verification
-For each acceptance criterion, explain exactly how the code satisfies it.
-Map each criterion to specific code elements (method, class, line).
-
-## 📝 5. Documentation & Notes
-- Summarize any API endpoints created (method, path, request/response format)
-- Note any trade-offs or design decisions made
-- List any follow-up items or recommendations
-
-## ✅ 6. Reuse Rule & Team Memory
-You will be provided with the current team memory via a \`guidelines.yaml\` JSON dump.
-1. Read existing rules (both Universal and Project-Specific groups).
-2. Match the ticket with past review feedback.
-3. Avoid repeating past mistakes.
-4. Apply checklist rules during implementation.
-5. If a rule conflicts with the current ticket, follow the project-specific rule unless the ticket explicitly overrides it.
-
-IMPORTANT RULES:
-- Do NOT rush into code. First produce the checklist, then write code.
-- Write COMPLETE, compilable Java code — not pseudocode.
-- If a requirement is ambiguous, state the ambiguity and your assumption.
-- If the ticket mentions a bug fix, show the fix clearly (before/after if helpful).
-- Include ALL necessary imports in each class.
-- Make the code production-quality: handle nulls, validation, errors.`;
-
-// ---------- PR Review Prompt ----------
-const PR_REVIEW_PROMPT = `You are an expert AI Code Reviewer analyzing pull request comments.
-We maintain a living checklist grouped into Universal Rules (coding style, validation, testing, error handling, security) and Project-Specific Rules (package structure, naming conventions, architecture, forbidden patterns, team preferences).
-
-## 🔁 Learn from PR Review Feedback
-- Classify each comment as Universal (applies across projects) or Project-Specific (applies only to this codebase/team).
-- Do not repeat the same mistake in future tasks.
-- Convert useful feedback into reusable checklist rules.
-- If feedback is unclear, mark it as "needs human confirmation".
-- Never change project-specific architecture, libraries, or conventions without checking existing code patterns and stored rules.
-
-Perform these steps:
-1. **Summarize Feedback:** List each reviewer comment in brief bullet form.
-2. **Classify Comments:** Label each as **Project-Specific** or **Universal**.
-3. **Map to Checklist:** Identify which existing rule it relates to.
-4. **Suggest Fixes:** For each comment, propose the code or documentation change needed. 
-5. **Update Guidelines:** Add new rules ONLY when review feedback proves they are useful. Output them in a strict JSON array block at the very end of your response inside \`\`\`json rules ... \`\`\` tags. The format must be:
-[ 
-  { "id": "rule-id", "type": "universal or project-specific", "description": "rule description", "category": "style, architecture, validation, etc.", "severity": "low/medium/high" } 
-]
-6. **Ready for Review:** Present the updated checklist entries, proposed patches, and any summary notes clearly.`;
-
+// All AI logic lives on the backend (server.js → services/aiService.js).
+// This file is purely a presentation layer: form handling, UI state, and display.
 
 // ---------- Example Tickets ----------
 const EXAMPLES = {
@@ -145,18 +49,9 @@ const EXAMPLES = {
 
 // ---------- DOM Elements ----------
 const els = {
-    settingsToggle: document.getElementById('settings-toggle'),
-    settingsPanel: document.getElementById('settings-panel'),
-    apiKeyInput: document.getElementById('api-key-input'),
-    toggleKeyVisibility: document.getElementById('toggle-key-visibility'),
-    saveKeyBtn: document.getElementById('save-key-btn'),
-    modelSelect: document.getElementById('model-select'),
-    apiStatus: document.getElementById('api-status'),
-    statusText: document.querySelector('.status-text'),
-
     examplesBtn: document.getElementById('examples-btn'),
     examplesMenu: document.getElementById('examples-menu'),
-    
+
     ticketForm: document.getElementById('ticket-form'),
     summaryInput: document.getElementById('ticket-summary'),
     descriptionInput: document.getElementById('ticket-description'),
@@ -188,12 +83,14 @@ const els = {
     prOutputContent: document.getElementById('pr-output-content'),
     prEmptyState: document.getElementById('pr-empty-state'),
     prResultFull: document.getElementById('pr-result-full'),
+
+    // API Status (simplified — now shows backend health)
+    apiStatus: document.getElementById('api-status'),
+    statusText: document.querySelector('.status-text'),
 };
 
 // ---------- State ----------
 let state = {
-    apiKey: '',
-    model: CONFIG.defaultModel,
     isGenerating: false,
     currentResponse: '',
     currentCodeBlocks: [],
@@ -201,41 +98,23 @@ let state = {
 
 // ---------- Initialize ----------
 function init() {
-    loadSettings();
     setupEventListeners();
     configureMarked();
-    updateApiStatus();
+    checkBackendHealth();
 }
 
-function loadSettings() {
-    const savedKey = localStorage.getItem('jiratocode_apikey');
-    const savedModel = localStorage.getItem('jiratocode_model');
-
-    state.apiKey = savedKey || CONFIG.defaultApiKey;
-    state.model = savedModel || CONFIG.defaultModel;
-
-    els.apiKeyInput.value = state.apiKey;
-    els.modelSelect.value = state.model;
-}
-
-function saveSettings() {
-    state.apiKey = els.apiKeyInput.value.trim();
-    state.model = els.modelSelect.value;
-
-    localStorage.setItem('jiratocode_apikey', state.apiKey);
-    localStorage.setItem('jiratocode_model', state.model);
-    
-    updateApiStatus();
-    showToast('Settings saved successfully!');
-}
-
-function updateApiStatus() {
-    if (state.apiKey) {
-        els.apiStatus.classList.add('connected');
-        els.statusText.textContent = 'API Ready';
-    } else {
+async function checkBackendHealth() {
+    try {
+        const res = await fetch('/api/guidelines');
+        if (res.ok) {
+            els.apiStatus.classList.add('connected');
+            els.statusText.textContent = 'Backend Ready';
+        } else {
+            throw new Error('Backend unavailable');
+        }
+    } catch (e) {
         els.apiStatus.classList.remove('connected');
-        els.statusText.textContent = 'Not configured';
+        els.statusText.textContent = 'Backend Offline';
     }
 }
 
@@ -243,7 +122,6 @@ function updateApiStatus() {
 function configureMarked() {
     const renderer = new marked.Renderer();
 
-    // Custom code block rendering with copy button
     renderer.code = function(codeObj) {
         const code = codeObj.text || codeObj;
         const lang = codeObj.lang || '';
@@ -277,30 +155,6 @@ function escapeHtml(text) {
 
 // ---------- Event Listeners ----------
 function setupEventListeners() {
-    // Settings toggle
-    els.settingsToggle.addEventListener('click', () => {
-        els.settingsPanel.classList.toggle('open');
-    });
-
-    // Save API key
-    els.saveKeyBtn.addEventListener('click', saveSettings);
-    els.apiKeyInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') saveSettings();
-    });
-
-    // Model select
-    els.modelSelect.addEventListener('change', () => {
-        state.model = els.modelSelect.value;
-        localStorage.setItem('jiratocode_model', state.model);
-        showToast(`Model changed to ${state.model}`);
-    });
-
-    // Toggle key visibility
-    els.toggleKeyVisibility.addEventListener('click', () => {
-        const input = els.apiKeyInput;
-        input.type = input.type === 'password' ? 'text' : 'password';
-    });
-
     // Examples dropdown
     els.examplesBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -404,13 +258,14 @@ function clearForm() {
     els.summaryInput.focus();
 }
 
-// ---------- Generate Code ----------
+// =============================================
+// CODE GENERATION — Calls Backend /api/generate-code
+// =============================================
 async function generateCode() {
     const summary = els.summaryInput.value.trim();
     const description = els.descriptionInput.value.trim();
     const criteria = els.criteriaInput.value.trim();
 
-    // Validate inputs
     if (!summary) {
         showToast('Please enter a ticket summary');
         els.summaryInput.focus();
@@ -421,25 +276,25 @@ async function generateCode() {
         els.criteriaInput.focus();
         return;
     }
-    if (!state.apiKey) {
-        showToast('Please configure your API key first');
-        els.settingsPanel.classList.add('open');
-        els.apiKeyInput.focus();
-        return;
-    }
 
-    // Build the user message
-    const userMessage = buildUserMessage(summary, description, criteria);
-
-    // Show loading state
     setLoadingState(true);
+    simulateLoadingSteps();
 
     try {
-        const response = await callGeminiAPI(userMessage);
-        state.currentResponse = response;
-        
-        // Parse and display result
-        displayResult(response);
+        const response = await fetch('/api/generate-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ summary, description, criteria })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || `Server error: ${response.status}`);
+        }
+
+        state.currentResponse = data.output;
+        displayResult(data.output);
     } catch (error) {
         showError(error.message);
     } finally {
@@ -447,82 +302,59 @@ async function generateCode() {
     }
 }
 
-// ---------- Build User Message ----------
-function buildUserMessage(summary, description, criteria) {
-    return `## Jira Ticket
+// =============================================
+// PR REVIEW — Calls Backend /api/analyze-pr
+// =============================================
+async function analyzeFeedback() {
+    const comments = els.prComments.value.trim();
+    if (!comments) {
+        showToast('Please enter review comments');
+        return;
+    }
 
-**Summary:** ${summary}
+    // Start loading
+    els.prAnalyzeBtn.disabled = true;
+    els.prAnalyzeBtn.querySelector('.btn-text').style.display = 'none';
+    els.prAnalyzeBtn.querySelector('.btn-loader').style.display = 'flex';
+    els.prEmptyState.style.display = 'none';
+    els.prResultFull.style.display = 'none';
+    els.prResultFull.innerHTML = '<div class="loading-state" style="padding: 40px; text-align: center;"><div class="loading-ring" style="margin:0 auto 20px;"><div></div><div></div><div></div><div></div></div><p style="color:var(--text-muted);">Analyzing feedback & mapping to guidelines...</p></div>';
+    els.prResultFull.style.display = 'block';
 
-**Description:** ${description || '(No additional description provided)'}
+    try {
+        const response = await fetch('/api/analyze-pr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ comments })
+        });
 
-**Acceptance Criteria:**
-${criteria}
+        const data = await response.json();
 
----
-
-Please analyze this Jira ticket and generate the implementation following the structured process (Clarify → Checklist → Code → Verify → Document). Write production-ready Java Spring Boot code.`;
-}
-
-// ---------- Call Gemini API ----------
-async function callGeminiAPI(userMessage) {
-    const url = `${CONFIG.apiBaseUrl}/${state.model}:generateContent?key=${state.apiKey}`;
-
-    const body = {
-        contents: [
-            {
-                role: "user",
-                parts: [{ text: userMessage }]
-            }
-        ],
-        systemInstruction: {
-            parts: [{ text: SYSTEM_PROMPT }]
-        },
-        generationConfig: {
-            temperature: 0.4,
-            topP: 0.95,
-            topK: 40,
-            maxOutputTokens: 8192,
+        if (!response.ok) {
+            throw new Error(data.error || `Server error: ${response.status}`);
         }
-    };
 
-    // Simulate loading steps
-    simulateLoadingSteps();
+        let aiMarkdown = data.output;
 
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMsg = errorData?.error?.message || `API Error: ${response.status} ${response.statusText}`;
-        
-        if (response.status === 400) {
-            throw new Error(`Invalid request: ${errorMsg}`);
-        } else if (response.status === 401 || response.status === 403) {
-            throw new Error('Invalid API key. Please check your Gemini API key in settings.');
-        } else if (response.status === 429) {
-            throw new Error('Rate limit exceeded. Please wait a moment and try again.');
-        } else {
-            throw new Error(errorMsg);
+        // Clean up JSON rules block for display
+        const jsonMatch = aiMarkdown.match(/```json\s+rules\s+([\s\S]*?)```/);
+        if (jsonMatch) {
+            aiMarkdown = aiMarkdown.replace(jsonMatch[0], '\n> **✅ Guideline updates have been processed and saved to `guidelines.yaml`.**\n');
         }
+
+        if (data.addedCount > 0) {
+            showToast(`Added ${data.addedCount} new rules to guidelines.yaml`);
+        }
+
+        els.prResultFull.innerHTML = marked.parse(aiMarkdown);
+        els.prResultFull.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+    } catch (error) {
+        els.prResultFull.innerHTML = `<div class="error-state"><div class="error-icon">⚠️</div><h3>Failed</h3><p>${error.message}</p></div>`;
+    } finally {
+        els.prAnalyzeBtn.disabled = false;
+        els.prAnalyzeBtn.querySelector('.btn-text').style.display = 'block';
+        els.prAnalyzeBtn.querySelector('.btn-loader').style.display = 'none';
     }
-
-    const data = await response.json();
-
-    // Extract text from response
-    const candidates = data.candidates;
-    if (!candidates || candidates.length === 0) {
-        throw new Error('No response generated. The model may have refused the request.');
-    }
-
-    const parts = candidates[0].content?.parts;
-    if (!parts || parts.length === 0) {
-        throw new Error('Empty response from the model.');
-    }
-
-    return parts.map(p => p.text).join('\n');
 }
 
 // ---------- Simulate Loading Steps ----------
@@ -534,7 +366,6 @@ function simulateLoadingSteps() {
         { id: 'ls-4', text: 'Verifying acceptance criteria', delay: 8000 },
     ];
 
-    // Reset all steps
     steps.forEach(s => {
         const el = document.getElementById(s.id);
         el.classList.remove('active', 'done');
@@ -545,7 +376,6 @@ function simulateLoadingSteps() {
         setTimeout(() => {
             if (!state.isGenerating) return;
 
-            // Mark previous steps as done
             for (let j = 0; j < i; j++) {
                 const prev = document.getElementById(steps[j].id);
                 prev.classList.remove('active');
@@ -553,7 +383,6 @@ function simulateLoadingSteps() {
                 prev.querySelector('.ls-check').textContent = '✓';
             }
 
-            // Mark current as active
             const current = document.getElementById(step.id);
             current.classList.add('active');
             current.querySelector('.ls-check').textContent = '⏳';
@@ -565,20 +394,14 @@ function simulateLoadingSteps() {
 
 // ---------- Display Result ----------
 function displayResult(markdownText) {
-    // Show tabs and actions
     els.outputTabs.style.display = 'flex';
     els.copyAllBtn.style.display = 'flex';
 
-    // Render full response
     els.resultFull.innerHTML = marked.parse(markdownText);
     
-    // Extract code blocks for "Code Only" tab
     extractCodeBlocks(markdownText);
-
-    // Show full response tab
     switchTab('full');
 
-    // Re-highlight code blocks
     els.resultFull.querySelectorAll('pre code').forEach(block => {
         hljs.highlightElement(block);
     });
@@ -613,7 +436,6 @@ function extractCodeBlocks(markdown) {
             highlighted = escapeHtml(block.code);
         }
 
-        // Try to extract a label from the code (e.g., class name)
         let label = block.lang.toUpperCase();
         const classMatch = block.code.match(/(?:class|interface|enum)\s+(\w+)/);
         if (classMatch) {
@@ -649,7 +471,6 @@ function setLoadingState(loading) {
     const btnLoader = els.generateBtn.querySelector('.btn-loader');
 
     if (loading) {
-        // Hide results, show loading
         els.emptyState.style.display = 'none';
         els.errorState.style.display = 'none';
         els.resultFull.style.display = 'none';
@@ -658,7 +479,6 @@ function setLoadingState(loading) {
         els.copyAllBtn.style.display = 'none';
         els.loadingState.style.display = 'flex';
 
-        // Button state
         btnIcon.style.display = 'none';
         btnText.style.display = 'none';
         btnLoader.style.display = 'flex';
@@ -666,7 +486,6 @@ function setLoadingState(loading) {
     } else {
         els.loadingState.style.display = 'none';
 
-        // Button state
         btnIcon.style.display = 'block';
         btnText.style.display = 'block';
         btnLoader.style.display = 'none';
@@ -733,105 +552,6 @@ function showToast(message) {
     setTimeout(() => {
         els.toast.classList.remove('show');
     }, 3000);
-}
-
-// ---------- PR Review Logic ----------
-async function getLocalGuidelines() {
-    try {
-        const port = window.location.port || 3000;
-        const res = await fetch(`http://localhost:${port}/api/guidelines`);
-        if(res.ok) {
-            return await res.json();
-        }
-    } catch(e) {
-        console.warn('Could not load local guidelines, proceeding without them.');
-    }
-    return null;
-}
-
-async function uploadNewGuidelines(rulesArray) {
-    try {
-        const port = window.location.port || 3000;
-        const res = await fetch(`http://localhost:${port}/api/guidelines`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ newRules: rulesArray })
-        });
-        const data = await res.json();
-        if(data.success && data.addedCount > 0) {
-            showToast(`Added ${data.addedCount} new rules to guidelines.yaml via Backend`);
-        }
-    } catch(e) {
-        console.warn('Could not upload guidelines, backend might not be running.');
-    }
-}
-
-async function analyzeFeedback() {
-    const comments = els.prComments.value.trim();
-    if(!comments) {
-        showToast('Please enter review comments');
-        return;
-    }
-    if (!state.apiKey) {
-        showToast('Please configure your API key first');
-        return;
-    }
-
-    // Start loading
-    els.prAnalyzeBtn.disabled = true;
-    els.prAnalyzeBtn.querySelector('.btn-text').style.display = 'none';
-    els.prAnalyzeBtn.querySelector('.btn-loader').style.display = 'flex';
-    els.prEmptyState.style.display = 'none';
-    els.prResultFull.style.display = 'none';
-    els.prResultFull.innerHTML = '<div class="loading-state" style="padding: 40px; text-align: center;"><div class="loading-ring" style="margin:0 auto 20px;"><div></div><div></div><div></div><div></div></div><p style="color:var(--text-muted);">Analyzing feedback & mapping to guidelines...</p></div>';
-    els.prResultFull.style.display = 'block';
-
-    try {
-        const guidelines = await getLocalGuidelines();
-        let userMsg = `## Review Comments\n\n${comments}\n`;
-        if (guidelines && (Object.keys(guidelines.universal_guidelines || {}).length > 0 || Object.keys(guidelines.project_guidelines || {}).length > 0)) {
-            userMsg += `\n## Current Guidelines Context\n\`\`\`json\n${JSON.stringify(guidelines, null, 2)}\n\`\`\``;
-        }
-
-        const url = `${CONFIG.apiBaseUrl}/${state.model}:generateContent?key=${state.apiKey}`;
-        const body = {
-            contents: [{ role: "user", parts: [{ text: userMsg }] }],
-            systemInstruction: { parts: [{ text: PR_REVIEW_PROMPT }] },
-            generationConfig: { temperature: 0.3 }
-        };
-
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
-
-        if (!response.ok) throw new Error('API request failed');
-        const data = await response.json();
-        let aiMarkdown = data.candidates[0].content.parts[0].text;
-
-        // Extract JSON rules if present
-        const jsonMatch = aiMarkdown.match(/```json\s+rules\s+([\s\S]*?)```/);
-        if (jsonMatch) {
-            try {
-                const newRules = JSON.parse(jsonMatch[1]);
-                if (Array.isArray(newRules) && newRules.length > 0) {
-                    await uploadNewGuidelines(newRules);
-                }
-            } catch(e) { console.error("Failed to parse AI JSON block", e); }
-            // Clean up the markdown view
-            aiMarkdown = aiMarkdown.replace(jsonMatch[0], '\n> [!NOTE]\n> *Guideline updates have been processed and saved to `guidelines.yaml`.*\n');
-        }
-
-        els.prResultFull.innerHTML = marked.parse(aiMarkdown);
-        els.prResultFull.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
-    } catch (error) {
-        els.prResultFull.innerHTML = `<div class="error-state"><div class="error-icon">⚠️</div><h3>Failed</h3><p>${error.message}</p></div>`;
-    } finally {
-        els.prAnalyzeBtn.disabled = false;
-        els.prAnalyzeBtn.querySelector('.btn-text').style.display = 'block';
-        els.prAnalyzeBtn.querySelector('.btn-loader').style.display = 'none';
-    }
 }
 
 // ---------- Start the app ----------
