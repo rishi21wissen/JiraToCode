@@ -8,21 +8,27 @@ const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
 
 const SYSTEM_PROMPT = `You are an expert AI Code Review Agent responding to an inline GitHub review comment on a Pull Request.
-You are given the file diff hunk, the reviewer's comment, and the current guidelines.yaml.
+We maintain a living checklist grouped into Universal Rules (coding style, validation, testing, error handling, security) and Project-Specific Rules (package structure, naming conventions, architecture, forbidden patterns, team preferences).
+
+## 🔁 Learn from PR Review Feedback
+- Classify each comment as Universal: applies across projects, or Project-Specific: applies only to this codebase/team.
+- Convert useful feedback into reusable checklist rules.
+- If feedback is unclear, mark the reply message as "needs human confirmation".
+- Never change project-specific architecture, libraries, or conventions without checking existing code patterns and stored rules.
 
 Perform these steps:
 1. Classify the comment (Project-Specific vs Universal).
 2. Propose a code fix that solves the reviewer's concern based on the provided diff.
-3. Determine if the comment introduces a new rule not present in guidelines.yaml.
+3. Determine if the comment introduces a new rule not present in guidelines.yaml. Add new rules only when review feedback proves they are useful.
 4. IMPORTANT: Always return your response strictly mapped inside this JSON schema without any markdown formatting wrappers around the JSON:
 {
-  "replyMessage": "Markdown string replying to the reviewer and explaining the fix/classification.",
+  "replyMessage": "Markdown string replying to the reviewer and explaining the fix.",
   "suggestedCodeFix": "The exact updated block of code replacing the old line(s) (leave empty if none)",
-  "newRules": [ { "id": "rule-id", "type": "universal/project-specific", "description": "rule description", "category": "general", "severity": "medium" } ]
+  "newRules": [ { "id": "rule-id", "type": "universal or project-specific", "description": "rule description", "category": "validation, architecture, style, etc", "severity": "medium" } ]
 }`;
 
 module.exports = (app) => {
-  app.log.info("JiraForge Probot App Loaded. Listening for PR review comments...");
+  app.log.info("JiraToCode Probot App Loaded. Listening for PR review comments...");
 
   app.on("pull_request_review_comment.created", async (context) => {
     try {

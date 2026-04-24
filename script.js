@@ -1,5 +1,5 @@
 // =========================================
-// JiraForge AI — Core Application Logic
+// JiraToCode AI — Core Application Logic
 // =========================================
 
 // ---------- Configuration ----------
@@ -61,6 +61,14 @@ Map each criterion to specific code elements (method, class, line).
 - Note any trade-offs or design decisions made
 - List any follow-up items or recommendations
 
+## ✅ 6. Reuse Rule & Team Memory
+You will be provided with the current team memory via a \`guidelines.yaml\` JSON dump.
+1. Read existing rules (both Universal and Project-Specific groups).
+2. Match the ticket with past review feedback.
+3. Avoid repeating past mistakes.
+4. Apply checklist rules during implementation.
+5. If a rule conflicts with the current ticket, follow the project-specific rule unless the ticket explicitly overrides it.
+
 IMPORTANT RULES:
 - Do NOT rush into code. First produce the checklist, then write code.
 - Write COMPLETE, compilable Java code — not pseudocode.
@@ -70,16 +78,24 @@ IMPORTANT RULES:
 - Make the code production-quality: handle nulls, validation, errors.`;
 
 // ---------- PR Review Prompt ----------
-const PR_REVIEW_PROMPT = `You are an expert AI Code Reviewer. You have received a list of review comments on a pull request.
+const PR_REVIEW_PROMPT = `You are an expert AI Code Reviewer analyzing pull request comments.
+We maintain a living checklist grouped into Universal Rules (coding style, validation, testing, error handling, security) and Project-Specific Rules (package structure, naming conventions, architecture, forbidden patterns, team preferences).
+
+## 🔁 Learn from PR Review Feedback
+- Classify each comment as Universal (applies across projects) or Project-Specific (applies only to this codebase/team).
+- Do not repeat the same mistake in future tasks.
+- Convert useful feedback into reusable checklist rules.
+- If feedback is unclear, mark it as "needs human confirmation".
+- Never change project-specific architecture, libraries, or conventions without checking existing code patterns and stored rules.
 
 Perform these steps:
 1. **Summarize Feedback:** List each reviewer comment in brief bullet form.
-2. **Classify Comments:** For each item, label it **Project-Specific** or **Universal** (based on whether it concerns a team convention or a general coding practice).
-3. **Map to Checklist:** Identify which existing checklist rule or guideline each comment relates to (if any). If it introduces a new concept, note it as a candidate for a new rule.
-4. **Suggest Fixes:** For each comment, propose the code or documentation change needed. Provide concrete edits or code snippets. 
-5. **Update Guidelines:** If there are new rules to add, output them in a strict JSON array block at the very end of your response inside \`\`\`json rules ... \`\`\` tags. The format must be:
+2. **Classify Comments:** Label each as **Project-Specific** or **Universal**.
+3. **Map to Checklist:** Identify which existing rule it relates to.
+4. **Suggest Fixes:** For each comment, propose the code or documentation change needed. 
+5. **Update Guidelines:** Add new rules ONLY when review feedback proves they are useful. Output them in a strict JSON array block at the very end of your response inside \`\`\`json rules ... \`\`\` tags. The format must be:
 [ 
-  { "id": "rule-id", "type": "universal or project-specific", "description": "rule description", "category": "style or logic etc", "severity": "low/medium/high" } 
+  { "id": "rule-id", "type": "universal or project-specific", "description": "rule description", "category": "style, architecture, validation, etc.", "severity": "low/medium/high" } 
 ]
 6. **Ready for Review:** Present the updated checklist entries, proposed patches, and any summary notes clearly.`;
 
@@ -192,8 +208,8 @@ function init() {
 }
 
 function loadSettings() {
-    const savedKey = localStorage.getItem('jiraforge_apikey');
-    const savedModel = localStorage.getItem('jiraforge_model');
+    const savedKey = localStorage.getItem('jiratocode_apikey');
+    const savedModel = localStorage.getItem('jiratocode_model');
 
     state.apiKey = savedKey || CONFIG.defaultApiKey;
     state.model = savedModel || CONFIG.defaultModel;
@@ -206,8 +222,8 @@ function saveSettings() {
     state.apiKey = els.apiKeyInput.value.trim();
     state.model = els.modelSelect.value;
 
-    localStorage.setItem('jiraforge_apikey', state.apiKey);
-    localStorage.setItem('jiraforge_model', state.model);
+    localStorage.setItem('jiratocode_apikey', state.apiKey);
+    localStorage.setItem('jiratocode_model', state.model);
     
     updateApiStatus();
     showToast('Settings saved successfully!');
@@ -275,7 +291,7 @@ function setupEventListeners() {
     // Model select
     els.modelSelect.addEventListener('change', () => {
         state.model = els.modelSelect.value;
-        localStorage.setItem('jiraforge_model', state.model);
+        localStorage.setItem('jiratocode_model', state.model);
         showToast(`Model changed to ${state.model}`);
     });
 
