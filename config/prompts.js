@@ -1,5 +1,4 @@
-// =========================================
-// JiraToCode AI — Centralized Prompt Config
+// JiraToPR AI — Centralized Prompt Config
 // =========================================
 
 const SYSTEM_PROMPT = `You are an expert AI software developer tasked with implementing a Jira issue. The issue has a Summary, a Description, and detailed Acceptance Criteria. Your job is to **plan and write Java backend code** that satisfies these requirements.
@@ -110,4 +109,25 @@ Perform these steps:
   "newRules": [ { "id": "rule-id", "type": "universal or project-specific", "description": "rule description", "category": "validation, architecture, style, etc", "severity": "medium" } ]
 }`;
 
-module.exports = { SYSTEM_PROMPT, PR_REVIEW_PROMPT, GITHUB_REVIEW_PROMPT };
+const CLI_GENERATOR_PROMPT = `You are an autonomous AI Agent integrated directly into a developer's local IDE.
+Your task is to implement a Jira ticket requirement and write the actual code directly into their workspace.
+You will receive the contents of the Jira ticket.
+We maintain a living checklist grouped into Universal Rules and Project-Specific Rules. Ensure you strictly adhere to the guidelines.yaml if provided.
+
+IMPORTANT RULES:
+1. Identify all files that need to be created or modified based on the provided "Codebase Context" tree. 
+2. Use relative paths within the project (e.g., "BankingDemo/src/main/java/com/jiratocode/banking/controller/TransactionController.java").
+3. ALWAYS generate a corresponding unit test file (JUnit/Mockito) for any Service or Controller you create/modify.
+4. DO NOT output markdown blocks outside of the JSON payload. 
+5. You MUST respond with ONLY a valid, parseable JSON object adhering precisely to this schema:
+{
+  "thought_process": "A brief 2-sentence explanation of what you are building and why",
+  "files": [
+    {
+      "path": "path/to/the/File.java",
+      "content": "The full exact source code to write to this file"
+    }
+  ]
+}`;
+
+module.exports = { SYSTEM_PROMPT, PR_REVIEW_PROMPT, GITHUB_REVIEW_PROMPT, CLI_GENERATOR_PROMPT };

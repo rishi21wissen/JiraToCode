@@ -1,12 +1,11 @@
-// =========================================
-// JiraToCode AI — Centralized AI Service
+// JiraToPR AI — Centralized AI Service
 // =========================================
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
-const { SYSTEM_PROMPT, PR_REVIEW_PROMPT } = require('../config/prompts');
+const { SYSTEM_PROMPT, PR_REVIEW_PROMPT, CLI_GENERATOR_PROMPT } = require('../config/prompts');
 
 const GUIDELINES_PATH = path.join(__dirname, '..', 'guidelines.yaml');
 
@@ -56,12 +55,14 @@ function appendRules(rulesArray) {
 
 // ---------- Gemini Client ----------
 let aiModel = null;
+let currentModelName = null;
 
 function initModel(apiKey) {
     if (!apiKey) throw new Error('GEMINI_API_KEY is not set in environment.');
     const genAI = new GoogleGenerativeAI(apiKey);
-    aiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    console.log('[aiService] Gemini model initialized.');
+    currentModelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+    aiModel = genAI.getGenerativeModel({ model: currentModelName });
+    console.log(`[aiService] Gemini model initialized using ${currentModelName}`);
 }
 
 // ---------- Code Generation ----------
@@ -128,9 +129,57 @@ async function analyzePR(comments) {
     return { responseText, addedCount };
 }
 
+// ---------- Local CLI Code Generation ----------
+async function generateLocalCode(ticketText, codebaseContext = "") {
+    if (!aiModel) throw new Error('AI model not initialized. Check your GEMINI_API_KEY.');
+
+    const guidelines = loadGuidelines();
+    let userMessage = `## Jira Ticket Request\n\n${ticketText}\n`;
+
+    if (codebaseContext) {
+        userMessage += `\n## Codebase Context (Existing Files)\n\`\`\`\n${codebaseContext}\n\`\`\`\n`;
+    }
+
+    const hasRules = Object.keys(guidelines.universal_guidelines || {}).length > 0 ||
+                     Object.keys(guidelines.project_guidelines || {}).length > 0;
+    if (hasRules) {
+        userMessage += `\n## Current Team Memory (guidelines.yaml)\nEnsure you follow these rules strictly:\n\`\`\`json\n${JSON.stringify(guidelines, null, 2)}\n\`\`\``;
+    }
+
+    const result = await aiModel.generateContent({
+        contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+        systemInstruction: { parts: [{ text: CLI_GENERATOR_PROMPT }] },
+        generationConfig: { 
+            temperature: 0.1,
+            responseMimeType: "application/json",
+            maxOutputTokens: 8192
+        }
+    });
+
+    let responseText = result.response.text();
+
+    // gemini-2.5-flash thinking mode leaks reasoning tokens BEFORE the JSON.
+    // Slice from the first '{' to the last '}' to isolate the JSON payload.
+    const start = responseText.indexOf('{');
+    const end = responseText.lastIndexOf('}');
+
+    if (start === -1 || end === -1 || end < start) {
+        throw new Error("AI returned no valid JSON object.\nRAW OUTPUT:\n" + responseText);
+    }
+
+    const jsonStr = responseText.slice(start, end + 1);
+
+    try {
+        return JSON.parse(jsonStr);
+    } catch (err) {
+        throw new Error("AI JSON Parsing Failed: " + err.message + "\nRAW OUTPUT:\n" + jsonStr);
+    }
+}
+
 module.exports = {
     initModel,
     generateCode,
+    generateLocalCode,
     analyzePR,
     loadGuidelines,
     appendRules

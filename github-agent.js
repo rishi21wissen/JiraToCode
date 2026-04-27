@@ -1,5 +1,4 @@
-// =========================================
-// JiraToCode AI — GitHub Probot PR Agent (BMAD SOA)
+// JiraToPR AI — GitHub Probot PR Agent (BMAD SOA)
 // =========================================
 // Imports prompts from config/prompts.js (single source of truth).
 
@@ -10,10 +9,11 @@ const { GITHUB_REVIEW_PROMPT } = require('./config/prompts');
 
 // Initialize Gemini
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
+const currentModelName = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const model = ai.getGenerativeModel({ model: currentModelName });
 
 module.exports = (app) => {
-  app.log.info("JiraToCode Probot App Loaded. Listening for PR review comments...");
+  app.log.info("JiraToPR Probot App Loaded. Listening for PR review comments...");
 
   app.on("pull_request_review_comment.created", async (context) => {
     try {
