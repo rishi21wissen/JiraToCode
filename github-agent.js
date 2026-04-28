@@ -7,6 +7,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const yaml = require('js-yaml');
 const { GITHUB_REVIEW_PROMPT } = require('./config/prompts');
 const { extractTokenUsage, formatTokenLog } = require('./utils/tokenTracker');
+const { validateReviewResponse } = require('./utils/responseValidator');
 
 // Initialize Gemini
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -106,13 +107,23 @@ module.exports = (app) => {
         throw new Error("Missing JSON structure in AI response");
       }
 
-      // 3. Formulate and post inline reply
-      let finalReplyMessage = aiResult.replyMessage;
-      if(aiResult.suggestedCodeFix) {
-        finalReplyMessage += `\n\n**Suggested Fix:**\n\`\`\`java\n${aiResult.suggestedCodeFix}\n\`\`\``;
+      // Validate the AI response payload
+      const validation = validateReviewResponse(aiResult);
+      if (!validation.valid) {
+        app.log.error("AI returned malformed data. Validation failed:");
+        validation.errors.forEach(err => app.log.error(` - ${err}`));
+        return; // Abort silently for the user, let the PR proceed without bot interference
       }
 
-      if (aiResult.newRules && aiResult.newRules.length > 0) {
+      const safeData = validation.sanitized;
+
+      // 3. Formulate and post inline reply
+      let finalReplyMessage = safeData.replyMessage;
+      if(safeData.suggestedCodeFix) {
+        finalReplyMessage += `\n\n**Suggested Fix:**\n\`\`\`java\n${safeData.suggestedCodeFix}\n\`\`\``;
+      }
+
+      if (safeData.newRules && safeData.newRules.length > 0) {
         finalReplyMessage += '\n\n*Agent Note: Added new rules to guidelines.yaml.*';
       }
 
@@ -126,7 +137,7 @@ module.exports = (app) => {
       });
 
       // 4. Auto-update guidelines.yaml on the branch (if new rules exist)
-      if (aiResult.newRules && aiResult.newRules.length > 0) {
+      if (safeData.newRules && safeData.newRules.length > 0) {
         app.log.info("New rules detected, fetching guidelines.yaml SHA to update...");
         
         let fileSha;
@@ -145,7 +156,7 @@ module.exports = (app) => {
         } catch(e) { /* File might not exist yet */ }
 
         // Append rules
-        aiResult.newRules.forEach(rule => {
+        safeData.newRules.forEach(rule => {
            let section = rule.type === 'universal' ? 'universal_guidelines' : 'project_guidelines';
            let category = rule.category || 'general';
            if (!currentYamlData[section]) currentYamlData[section] = {};

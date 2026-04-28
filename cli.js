@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const aiService = require('./services/aiService');
 const { formatTokenUsage } = require('./utils/tokenTracker');
+const { validateGenerationResponse } = require('./utils/responseValidator');
 
 async function main() {
     const args = process.argv.slice(2);
@@ -38,26 +39,47 @@ async function main() {
         
         // This leverages the new generation function tailored for local disk access
         const resultJSON = await aiService.generateLocalCode(ticketContent, existingStructure);
-        
-        console.log(`\n✅ AI Architecture & Planning Complete:`);
-        console.log(`\n💡 AI Thoughts: ${resultJSON.thought_process}\n`);
 
-        // Print token usage immediately after generation
-        if (resultJSON.tokenUsage) {
-            console.log('\n' + formatTokenUsage(resultJSON.tokenUsage));
+        const validation = validateGenerationResponse(resultJSON);
+        
+        // Always print token usage if available
+        if (validation.sanitized.tokenUsage && validation.sanitized.tokenUsage.totalTokens > 0) {
+            console.log('\n' + formatTokenUsage(validation.sanitized.tokenUsage));
         }
 
-        if (!resultJSON.files || resultJSON.files.length === 0) {
+        if (!validation.valid) {
+            console.error(`\n❌ AI returned malformed data. Validation failed:`);
+            validation.errors.forEach(err => console.error(`   - ${err}`));
+            console.error(`\nAborting operation to prevent unsafe file writes.`);
+            return;
+        }
+
+        const safeData = validation.sanitized;
+        
+        console.log(`\n✅ AI Architecture & Planning Complete:`);
+        console.log(`\n💡 AI Thoughts: ${safeData.thoughts || 'No thoughts provided.'}\n`);
+
+        const allFiles = [...safeData.files, ...safeData.tests];
+
+        if (allFiles.length === 0) {
             console.log(`⚠️ No file changes were suggested by the AI.`);
             return;
         }
 
         console.log(`📂 Applying changes directly to your local workspace...`);
         
-        for (const fileDef of resultJSON.files) {
+        for (const fileDef of allFiles) {
             const targetPath = path.resolve(fileDef.path);
             const dirPath = path.dirname(targetPath);
             
+            if (fileDef.action === 'delete') {
+                if (fs.existsSync(targetPath)) {
+                    fs.unlinkSync(targetPath);
+                    console.log(`   [DELETED] ${fileDef.path}`);
+                }
+                continue;
+            }
+
             // Ensure directory exists
             if (!fs.existsSync(dirPath)) {
                 fs.mkdirSync(dirPath, { recursive: true });
