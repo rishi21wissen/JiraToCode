@@ -5,7 +5,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
-const { SYSTEM_PROMPT, PR_REVIEW_PROMPT, CLI_GENERATOR_PROMPT } = require('../config/prompts');
+const { SYSTEM_PROMPT, PR_REVIEW_PROMPT, CLI_GENERATOR_PROMPT, CONTEXT_SELECTOR_PROMPT } = require('../config/prompts');
 
 const GUIDELINES_PATH = path.join(__dirname, '..', 'guidelines.yaml');
 
@@ -63,6 +63,46 @@ function initModel(apiKey) {
     currentModelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
     aiModel = genAI.getGenerativeModel({ model: currentModelName });
     console.log(`[aiService] Gemini model initialized using ${currentModelName}`);
+}
+
+// ---------- Context Selection (pre-generation pruning) ----------
+/**
+ * Calls Gemini with the Context Selector prompt to pick the minimum
+ * files and rule packs needed before code generation.
+ *
+ * @param {string} ticketText - Raw Jira ticket content.
+ * @param {string} fileIndex  - Newline-separated list of repo file paths.
+ * @returns {Promise<object>} Parsed JSON matching the CONTEXT_SELECTOR schema.
+ */
+async function selectContext(ticketText, fileIndex = '') {
+    if (!aiModel) throw new Error('AI model not initialized. Check your GEMINI_API_KEY.');
+
+    const guidelines = loadGuidelines();
+    const ruleCategories = [
+        ...Object.keys(guidelines.universal_guidelines || {}),
+        ...Object.keys(guidelines.project_guidelines || {})
+    ].join(', ');
+
+    const userMessage =
+        `## Jira Ticket\n${ticketText}\n\n` +
+        `## Repository File Index\n\`\`\`\n${fileIndex}\n\`\`\`\n\n` +
+        `## Available Rule Categories\n${ruleCategories}`;
+
+    const result = await aiModel.generateContent({
+        contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+        systemInstruction: { parts: [{ text: CONTEXT_SELECTOR_PROMPT }] },
+        generationConfig: {
+            temperature: 0.0,
+            responseMimeType: 'application/json',
+            maxOutputTokens: 1024
+        }
+    });
+
+    const raw = result.response.text();
+    const start = raw.indexOf('{');
+    const end   = raw.lastIndexOf('}');
+    if (start === -1 || end === -1) throw new Error('Context Selector returned no valid JSON.\nRAW: ' + raw);
+    return JSON.parse(raw.slice(start, end + 1));
 }
 
 // ---------- Code Generation ----------
@@ -181,6 +221,7 @@ module.exports = {
     generateCode,
     generateLocalCode,
     analyzePR,
+    selectContext,
     loadGuidelines,
     appendRules
 };
