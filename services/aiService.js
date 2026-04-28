@@ -6,8 +6,31 @@ const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
 const { SYSTEM_PROMPT, PR_REVIEW_PROMPT, CLI_GENERATOR_PROMPT, CONTEXT_SELECTOR_PROMPT } = require('../config/prompts');
+const { extractTokenUsage } = require('../utils/tokenTracker');
 
 const GUIDELINES_PATH = path.join(__dirname, '..', 'guidelines.yaml');
+
+/**
+ * Helper to retry AI calls on 503 / Service Unavailable errors.
+ */
+async function withRetry(fn, retries = 3, delay = 2000) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            return await fn();
+        } catch (error) {
+            const isRetryable =
+                error.message?.includes("503") ||
+                error.message?.includes("Service Unavailable") ||
+                error.message?.includes("high demand");
+
+            if (!isRetryable || attempt === retries) throw error;
+
+            console.log(`⚠️ Gemini busy (attempt ${attempt}/${retries}), retrying in ${delay / 1000}s...`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            delay *= 2;
+        }
+    }
+}
 
 // ---------- Guidelines Helper ----------
 function loadGuidelines() {
@@ -88,7 +111,7 @@ async function selectContext(ticketText, fileIndex = '') {
         `## Repository File Index\n\`\`\`\n${fileIndex}\n\`\`\`\n\n` +
         `## Available Rule Categories\n${ruleCategories}`;
 
-    const result = await aiModel.generateContent({
+    const result = await withRetry(() => aiModel.generateContent({
         contents: [{ role: 'user', parts: [{ text: userMessage }] }],
         systemInstruction: { parts: [{ text: CONTEXT_SELECTOR_PROMPT }] },
         generationConfig: {
@@ -96,13 +119,15 @@ async function selectContext(ticketText, fileIndex = '') {
             responseMimeType: 'application/json',
             maxOutputTokens: 1024
         }
-    });
+    }));
 
     const raw = result.response.text();
     const start = raw.indexOf('{');
     const end   = raw.lastIndexOf('}');
     if (start === -1 || end === -1) throw new Error('Context Selector returned no valid JSON.\nRAW: ' + raw);
-    return JSON.parse(raw.slice(start, end + 1));
+
+    const tokenUsage = extractTokenUsage(result, currentModelName);
+    return { ...JSON.parse(raw.slice(start, end + 1)), tokenUsage };
 }
 
 // ---------- Code Generation ----------
@@ -122,13 +147,14 @@ async function generateCode({ summary, description, criteria }) {
         userMessage += `\n## Team Memory (guidelines.yaml)\n\`\`\`json\n${JSON.stringify(guidelines, null, 2)}\n\`\`\``;
     }
 
-    const result = await aiModel.generateContent({
+    const result = await withRetry(() => aiModel.generateContent({
         contents: [{ role: 'user', parts: [{ text: userMessage }] }],
         systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
         generationConfig: { temperature: 0.2 }
-    });
+    }));
 
-    return result.response.text();
+    const tokenUsage = extractTokenUsage(result, currentModelName);
+    return { responseText: result.response.text(), tokenUsage };
 }
 
 // ---------- PR Review Analysis ----------
@@ -144,13 +170,14 @@ async function analyzePR(comments) {
         userMessage += `\n## Current Guidelines Context\n\`\`\`json\n${JSON.stringify(guidelines, null, 2)}\n\`\`\``;
     }
 
-    const result = await aiModel.generateContent({
+    const result = await withRetry(() => aiModel.generateContent({
         contents: [{ role: 'user', parts: [{ text: userMessage }] }],
         systemInstruction: { parts: [{ text: PR_REVIEW_PROMPT }] },
         generationConfig: { temperature: 0.3 }
-    });
+    }));
 
     const responseText = result.response.text();
+    const tokenUsage = extractTokenUsage(result, currentModelName);
 
     // Extract and save new rules if present
     const jsonMatch = responseText.match(/```json\s+rules\s+([\s\S]*?)```/);
@@ -166,7 +193,7 @@ async function analyzePR(comments) {
         }
     }
 
-    return { responseText, addedCount };
+    return { responseText, addedCount, tokenUsage };
 }
 
 // ---------- Local CLI Code Generation ----------
@@ -186,7 +213,7 @@ async function generateLocalCode(ticketText, codebaseContext = "") {
         userMessage += `\n## Current Team Memory (guidelines.yaml)\nEnsure you follow these rules strictly:\n\`\`\`json\n${JSON.stringify(guidelines, null, 2)}\n\`\`\``;
     }
 
-    const result = await aiModel.generateContent({
+    const result = await withRetry(() => aiModel.generateContent({
         contents: [{ role: 'user', parts: [{ text: userMessage }] }],
         systemInstruction: { parts: [{ text: CLI_GENERATOR_PROMPT }] },
         generationConfig: { 
@@ -194,8 +221,9 @@ async function generateLocalCode(ticketText, codebaseContext = "") {
             responseMimeType: "application/json",
             maxOutputTokens: 8192
         }
-    });
+    }));
 
+    const tokenUsage = extractTokenUsage(result, currentModelName);
     let responseText = result.response.text();
 
     // gemini-2.5-flash thinking mode leaks reasoning tokens BEFORE the JSON.
@@ -210,7 +238,8 @@ async function generateLocalCode(ticketText, codebaseContext = "") {
     const jsonStr = responseText.slice(start, end + 1);
 
     try {
-        return JSON.parse(jsonStr);
+        const parsed = JSON.parse(jsonStr);
+        return { ...parsed, tokenUsage };
     } catch (err) {
         throw new Error("AI JSON Parsing Failed: " + err.message + "\nRAW OUTPUT:\n" + jsonStr);
     }

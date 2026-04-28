@@ -6,6 +6,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const aiService = require('./services/aiService');
+const { formatTokenUsage } = require('./utils/tokenTracker');
 
 async function main() {
     const args = process.argv.slice(2);
@@ -40,6 +41,11 @@ async function main() {
         
         console.log(`\n✅ AI Architecture & Planning Complete:`);
         console.log(`\n💡 AI Thoughts: ${resultJSON.thought_process}\n`);
+
+        // Print token usage immediately after generation
+        if (resultJSON.tokenUsage) {
+            console.log('\n' + formatTokenUsage(resultJSON.tokenUsage));
+        }
 
         if (!resultJSON.files || resultJSON.files.length === 0) {
             console.log(`⚠️ No file changes were suggested by the AI.`);

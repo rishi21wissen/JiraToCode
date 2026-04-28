@@ -1,0 +1,48 @@
+Jira Ticket (Test Case for JiraToPR)
+Title
+
+ACC-101 Create Account Creation API
+
+Description
+
+Implement a new REST API to create a bank account for a user.
+
+The project already contains:
+
+Account entity
+AccountRepository
+
+The agent should complete the missing layers by implementing:
+
+Controller
+Service
+Request DTO
+Unit Test
+
+The API should allow creation of a new account with:
+
+userId
+balance
+
+The created account should be saved using AccountRepository.
+
+Acceptance Criteria
+Create a POST API endpoint:
+POST /api/accounts
+Request body should accept:
+{
+  "userId": 101,
+  "balance": 5000.00
+}
+API should:
+validate request body
+create a new Account
+save using AccountRepository
+return created account
+Response should return:
+id
+userId
+balance
+Implement service layer logic for account creation.
+Add unit test for service layer.
+Follow Spring Boot best practices.
