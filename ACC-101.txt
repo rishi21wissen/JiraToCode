@@ -1,11 +1,12 @@
 Jira Ticket (Test Case for JiraToPR)
 Title
 
-ACC-101 Create Account Creation API
+ACC-101 Create Account Creation API with DB and Frontend
 
 Description
 
 Implement a new REST API to create a bank account for a user.
+This ticket requires changes across the backend, database, and frontend.
 
 The project already contains:
 
@@ -14,17 +15,20 @@ AccountRepository
 
 The agent should complete the missing layers by implementing:
 
-Controller
-Service
-Request DTO
-Unit Test
+1. BACKEND (Java):
+   - Controller
+   - Service
+   - Request DTO
+   - Unit Test
+   - The API should allow creation of a new account with userId, balance, and accountType.
 
-The API should allow creation of a new account with:
+2. DATABASE (SQL):
+   - Add a new column 'account_type' to the 'accounts' table (VARCHAR, default 'SAVINGS').
+   - Create a new 'transactions' table to track initial deposits.
 
-userId
-balance
-
-The created account should be saved using AccountRepository.
+3. FRONTEND (HTML/JS):
+   - Create a Thymeleaf page 'account-create.html' to allow users to input account details.
+   - Add a JavaScript file to handle the form submission via AJAX to the new API.
 
 Acceptance Criteria
 Create a POST API endpoint:
@@ -32,17 +36,28 @@ POST /api/accounts
 Request body should accept:
 {
   "userId": 101,
-  "balance": 5000.00
+  "balance": 5000.00,
+  "accountType": "SAVINGS"
 }
+
+DB Migration:
+- Flyway script adding 'account_type' column.
+- Flyway script creating 'transactions' table.
+
+UI Requirements:
+- Form with userId, balance, and accountType dropdown.
+- Success message on creation.
+
 API should:
-validate request body
-create a new Account
-save using AccountRepository
-return created account
+- Validate request body
+- Create a new Account
+- Save using AccountRepository
+- Return created account
+
 Response should return:
-id
-userId
-balance
-Implement service layer logic for account creation.
-Add unit test for service layer.
+- id
+- userId
+- balance
+- accountType
+
 Follow Spring Boot best practices.

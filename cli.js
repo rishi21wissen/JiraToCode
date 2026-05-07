@@ -1,13 +1,13 @@
 // =========================================
-// JiraToPR AI — Local CLI Agent
+// JiraToPR AI — Local CLI Agent (Multi-Agent Orchestration)
 // =========================================
 
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const aiService = require('./services/aiService');
+const orchestrator = require('./services/orchestrator');
+const { pushAndOpenPR } = require('./services/gitAgent');
 const { formatTokenUsage } = require('./utils/tokenTracker');
-const { validateGenerationResponse } = require('./utils/responseValidator');
 
 async function main() {
     const args = process.argv.slice(2);
@@ -32,32 +32,21 @@ async function main() {
     console.log(`🔍 Scanned ${existingStructure.split('\\n').length} files for context...`);
 
     try {
-        console.log(`🚀 Initializing connected AI Model...`);
-        aiService.initModel(process.env.GEMINI_API_KEY);
+        console.log(`🚀 Initializing Multi-Agent Orchestrator...`);
+        orchestrator.initModel(process.env.GEMINI_API_KEY);
 
-        console.log(`🧠 Analyzing ticket and generating local file operations (this may take up to 30 seconds)...`);
-        
-        // This leverages the new generation function tailored for local disk access
-        const resultJSON = await aiService.generateLocalCode(ticketContent, existingStructure);
+        console.log(`🧠 Running Manager + Specialist Personas (this may take up to 60 seconds)...`);
 
-        const validation = validateGenerationResponse(resultJSON);
-        
-        // Always print token usage if available
-        if (validation.sanitized.tokenUsage && validation.sanitized.tokenUsage.totalTokens > 0) {
-            console.log('\n' + formatTokenUsage(validation.sanitized.tokenUsage));
+        // Manager analyses ticket → delegates to specialist personas in parallel
+        const safeData = await orchestrator.run(ticketContent, existingStructure);
+
+        // Print aggregated token usage across all personas
+        if (safeData.tokenUsage && safeData.tokenUsage.totalTokens > 0) {
+            console.log('\n' + formatTokenUsage(safeData.tokenUsage));
         }
 
-        if (!validation.valid) {
-            console.error(`\n❌ AI returned malformed data. Validation failed:`);
-            validation.errors.forEach(err => console.error(`   - ${err}`));
-            console.error(`\nAborting operation to prevent unsafe file writes.`);
-            return;
-        }
-
-        const safeData = validation.sanitized;
-        
-        console.log(`\n✅ AI Architecture & Planning Complete:`);
-        console.log(`\n💡 AI Thoughts: ${safeData.thoughts || 'No thoughts provided.'}\n`);
+        console.log(`\n✅ Multi-Agent Planning Complete:`);
+        console.log(`\n💡 Orchestrator Summary: ${safeData.thoughts || 'No summary provided.'}\n`);
 
         const allFiles = [...safeData.files, ...safeData.tests];
 
@@ -91,17 +80,9 @@ async function main() {
         }
 
         console.log(`\n🎉 Success! All code and tests have been written directly to your workspace.`);
-        console.log(`\n==============================================`);
-        console.log(`🛠️  WHAT'S NEXT? (The Review Loop)`);
-        console.log(`==============================================`);
-        console.log(`Your local files are ready. To trigger the AI Reviewer:`);
-        console.log(`  1. git checkout -b feature/${path.basename(ticketPath, '.txt').toLowerCase()}`);
-        console.log(`  2. git add . && git commit -m "Implement ${path.basename(ticketPath, '.txt')}"`);
-        console.log(`  3. git push origin HEAD`);
-        console.log(`  4. Open a Pull Request on GitHub.`);
-        console.log(`When your Senior Developer adds a review comment on that PR,`);
-        console.log(`the github-agent.js Bot will automatically intercept it,`);
-        console.log(`learn from the feedback, and update guidelines.yaml permanently.\n`);
+
+        // 🌿 Hand off to the Git Manager Persona — branch, commit, push, and open/amend PR automatically
+        await pushAndOpenPR(ticketPath, safeData.thoughts || '');
 
     } catch (err) {
         console.error(`\n❌ Fatal Agent Error:`, err.message);

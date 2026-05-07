@@ -53,18 +53,18 @@ function validateGenerationResponse(response) {
     } else {
         filesArray.forEach((file, index) => {
             if (!file || typeof file !== 'object') {
-                errors.push(\`File at index \${index} is not an object\`);
+                errors.push(`File at index ${index} is not an object`);
                 return;
             }
 
             if (!file.path || typeof file.path !== 'string' || file.path.trim() === '') {
-                errors.push(\`File at index \${index} is missing a valid "path"\`);
+                errors.push(`File at index ${index} is missing a valid "path"`);
                 return;
             }
 
             const action = file.action ? file.action.toLowerCase() : 'update'; // Default
             if (!['create', 'update', 'delete'].includes(action)) {
-                errors.push(\`File at index \${index} (\${file.path}) has invalid action: \${action}\`);
+                errors.push(`File at index ${index} (${file.path}) has invalid action: ${action}`);
                 return;
             }
 
@@ -84,12 +84,12 @@ function validateGenerationResponse(response) {
                     finalContent = validChanges.map(c => c.content).join('\\n');
                     validContent = true;
                 } else {
-                    errors.push(\`File at index \${index} (\${file.path}) has invalid changes array\`);
+                    errors.push(`File at index ${index} (${file.path}) has invalid changes array`);
                 }
             }
 
             if (action !== 'delete' && !validContent) {
-                errors.push(\`File at index \${index} (\${file.path}) is missing string "content" or "changes"\`);
+                errors.push(`File at index ${index} (${file.path}) is missing string "content" or "changes"`);
                 return;
             }
 
@@ -173,15 +173,15 @@ function validateReviewResponse(response) {
         } else {
             response.newRules.forEach((rule, index) => {
                 if (!rule || typeof rule !== 'object') {
-                    errors.push(\`Rule at index \${index} is not an object\`);
+                    errors.push(`Rule at index ${index} is not an object`);
                     return;
                 }
                 if (!rule.id || typeof rule.id !== 'string') {
-                    errors.push(\`Rule at index \${index} is missing string "id"\`);
+                    errors.push(`Rule at index ${index} is missing string "id"`);
                     return;
                 }
                 if (!rule.description || typeof rule.description !== 'string') {
-                    errors.push(\`Rule at index \${index} is missing string "description"\`);
+                    errors.push(`Rule at index ${index} is missing string "description"`);
                     return;
                 }
                 
